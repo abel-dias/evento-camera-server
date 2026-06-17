@@ -13,9 +13,19 @@ let participantes = [];
 
 let participanteSelecionado = null;
 
+let telaoId = null;
+
 io.on("connection", (socket) => {
 
     console.log("Conectado:", socket.id);
+    
+    socket.on("registrarTelao", () => {
+
+    telaoId = socket.id;
+
+    console.log("Telão registrado:", socket.id);
+
+});
 
     // Participante entrou
     socket.on("entrar", (dados) => {
@@ -34,13 +44,22 @@ io.on("connection", (socket) => {
     // Admin selecionou alguém
     socket.on("selecionar", (id) => {
 
-        participanteSelecionado = id;
+    participanteSelecionado = id;
 
-        io.emit("participanteSelecionado", id);
+    io.emit("participanteSelecionado", id);
 
-        console.log("Selecionado:", id);
+    if(telaoId){
 
-    });
+        io.to(telaoId).emit(
+            "iniciarVideo",
+            id
+        );
+
+    }
+
+    console.log("Selecionado:", id);
+
+});
 
     // =====================
     // WEBRTC
@@ -76,6 +95,12 @@ io.on("connection", (socket) => {
     // =====================
 
     socket.on("disconnect", () => {
+        
+        if(socket.id === telaoId){
+
+           telaoId = null;
+
+}
 
         participantes = participantes.filter(
             p => p.id !== socket.id
