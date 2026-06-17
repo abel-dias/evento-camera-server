@@ -1,6 +1,7 @@
 {
   "name": "evento-camera-server",
   "version": "1.0.0",
+  "description": "Servidor do sistema de câmera ao vivo para telão",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
