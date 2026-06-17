@@ -1,133 +1,153 @@
 const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+
 const app = express();
+const server = http.createServer(app);
 
-const http = require("http").createServer(app);
-
-const io = require("socket.io")(http, {
-    cors: {
-        origin: "*"
-    }
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
 });
 
-let participantes = [];
-
-let participanteSelecionado = null;
-
+const participantes = new Map();
 let telaoId = null;
 
-io.on("connection", (socket) => {
-
-    console.log("Conectado:", socket.id);
-    
-    socket.on("registrarTelao", () => {
-
-    telaoId = socket.id;
-
-    console.log("Telão registrado:", socket.id);
-
-});
-
-    // Participante entrou
-    socket.on("entrar", (dados) => {
-
-        const participante = {
-            id: socket.id,
-            nome: dados.nome || "Sem nome"
-        };
-
-        participantes.push(participante);
-
-        io.emit("fila", participantes);
-
-    });
-
-    // Admin selecionou alguém
-    socket.on("selecionar", (id) => {
-
-    participanteSelecionado = id;
-
-    io.emit("participanteSelecionado", id);
-
-    if(telaoId){
-
-        io.to(telaoId).emit(
-            "iniciarVideo",
-            id
-        );
-
-    }
-
-    console.log("Selecionado:", id);
-
-});
-
-    // =====================
-    // WEBRTC
-    // =====================
-
-    socket.on("offer", (data) => {
-
-        io.to(data.target).emit("offer", {
-            offer: data.offer,
-            sender: socket.id
-        });
-
-    });
-
-    socket.on("answer", (data) => {
-
-        io.to(data.target).emit("answer", {
-            answer: data.answer,
-            sender: socket.id
-        });
-
-    });
-
-    socket.on("ice-candidate", (data) => {
-
-        io.to(data.target).emit("ice-candidate", {
-            candidate: data.candidate,
-            sender: socket.id
-        });
-
-    });
-
-    // =====================
-
-    socket.on("disconnect", () => {
-        
-        if(socket.id === telaoId){
-
-           telaoId = null;
-
+function filaParticipantes() {
+  return Array.from(participantes.values());
 }
 
-        participantes = participantes.filter(
-            p => p.id !== socket.id
-        );
+function atualizarFila() {
+  io.emit("fila", filaParticipantes());
+}
 
-        if (participanteSelecionado === socket.id) {
-            participanteSelecionado = null;
-        }
+io.on("connection", (socket) => {
+  console.log("Conectado:", socket.id);
 
-        io.emit("fila", participantes);
+  socket.on("registrarTelao", () => {
+    telaoId = socket.id;
+    console.log("Telão registrado:", telaoId);
 
-        console.log("Desconectado:", socket.id);
+    socket.emit("telaoRegistrado", { id: telaoId });
+    atualizarFila();
+  });
 
+  socket.on("registrarAdmin", () => {
+    socket.emit("fila", filaParticipantes());
+  });
+
+  socket.on("entrar", (dados = {}) => {
+    const nome = dados.nome && dados.nome.trim() !== ""
+      ? dados.nome.trim()
+      : "Participante";
+
+    const participante = {
+      id: socket.id,
+      nome,
+      entrouEm: Date.now()
+    };
+
+    participantes.set(socket.id, participante);
+
+    console.log("Participante entrou:", participante);
+    socket.emit("entradaConfirmada", participante);
+
+    atualizarFila();
+  });
+
+  socket.on("selecionar", (idParticipante) => {
+    const participante = participantes.get(idParticipante);
+
+    if (!participante) {
+      socket.emit("erroSelecao", "Participante não encontrado.");
+      return;
+    }
+
+    if (!telaoId) {
+      socket.emit("erroSelecao", "O telão ainda não está conectado.");
+      return;
+    }
+
+    console.log("Selecionado para o telão:", participante.nome);
+
+    io.to(telaoId).emit("iniciarVideo", { participante });
+    io.to(idParticipante).emit("voceFoiSelecionado", {
+      telaoId,
+      participante
     });
 
+    io.emit("participanteSelecionado", participante);
+  });
+
+  socket.on("offer", (data) => {
+    if (!data || !data.target || !data.offer) return;
+
+    io.to(data.target).emit("offer", {
+      sender: socket.id,
+      offer: data.offer
+    });
+  });
+
+  socket.on("answer", (data) => {
+    if (!data || !data.target || !data.answer) return;
+
+    io.to(data.target).emit("answer", {
+      sender: socket.id,
+      answer: data.answer
+    });
+  });
+
+  socket.on("ice-candidate", (data) => {
+    if (!data || !data.target || !data.candidate) return;
+
+    io.to(data.target).emit("ice-candidate", {
+      sender: socket.id,
+      candidate: data.candidate
+    });
+  });
+
+  socket.on("pararTransmissao", (idParticipante) => {
+    if (idParticipante) {
+      io.to(idParticipante).emit("pararTransmissao");
+    }
+
+    if (telaoId) {
+      io.to(telaoId).emit("limparTelao");
+    }
+  });
+
+  socket.on("disconnect", () => {
+    console.log("Desconectado:", socket.id);
+
+    if (socket.id === telaoId) {
+      telaoId = null;
+    }
+
+    if (participantes.has(socket.id)) {
+      participantes.delete(socket.id);
+      atualizarFila();
+    }
+
+    io.emit("usuarioDesconectado", socket.id);
+  });
 });
 
 app.get("/", (req, res) => {
+  res.send("Servidor Online - Evento Câmera");
+});
 
-    res.send("Servidor Online");
-
+app.get("/health", (req, res) => {
+  res.json({
+    status: "online",
+    participantes: participantes.size,
+    telaoConectado: !!telaoId
+  });
 });
 
 const PORT = process.env.PORT || 3000;
 
-http.listen(PORT, () => {
-
-    console.log("Servidor rodando na porta", PORT);
-
+server.listen(PORT, () => {
+  console.log("Servidor rodando na porta", PORT);
 });
