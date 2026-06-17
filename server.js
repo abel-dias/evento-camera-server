@@ -15,12 +15,12 @@ const io = new Server(server, {
 const participantes = new Map();
 let telaoId = null;
 
-function filaParticipantes() {
+function getFilaParticipantes() {
   return Array.from(participantes.values());
 }
 
 function atualizarFila() {
-  io.emit("fila", filaParticipantes());
+  io.emit("fila", getFilaParticipantes());
 }
 
 io.on("connection", (socket) => {
@@ -30,30 +30,32 @@ io.on("connection", (socket) => {
     telaoId = socket.id;
     console.log("Telão registrado:", telaoId);
 
-    socket.emit("telaoRegistrado", { id: telaoId });
+    socket.emit("telaoRegistrado");
     atualizarFila();
   });
 
   socket.on("registrarAdmin", () => {
-    socket.emit("fila", filaParticipantes());
+    console.log("Admin registrado:", socket.id);
+    socket.emit("fila", getFilaParticipantes());
   });
 
   socket.on("entrar", (dados = {}) => {
-    const nome = dados.nome && dados.nome.trim() !== ""
-      ? dados.nome.trim()
-      : "Participante";
+    const nome =
+      dados.nome && dados.nome.trim() !== ""
+        ? dados.nome.trim()
+        : "Participante";
 
     const participante = {
       id: socket.id,
-      nome,
+      nome: nome,
       entrouEm: Date.now()
     };
 
     participantes.set(socket.id, participante);
 
     console.log("Participante entrou:", participante);
-    socket.emit("entradaConfirmada", participante);
 
+    socket.emit("entradaConfirmada", participante);
     atualizarFila();
   });
 
@@ -70,12 +72,15 @@ io.on("connection", (socket) => {
       return;
     }
 
-    console.log("Selecionado para o telão:", participante.nome);
+    console.log("Participante selecionado:", participante.nome);
 
-    io.to(telaoId).emit("iniciarVideo", { participante });
+    io.to(telaoId).emit("iniciarVideo", {
+      participante: participante
+    });
+
     io.to(idParticipante).emit("voceFoiSelecionado", {
-      telaoId,
-      participante
+      telaoId: telaoId,
+      participante: participante
     });
 
     io.emit("participanteSelecionado", participante);
@@ -109,6 +114,8 @@ io.on("connection", (socket) => {
   });
 
   socket.on("pararTransmissao", (idParticipante) => {
+    console.log("Parar transmissão:", idParticipante);
+
     if (idParticipante) {
       io.to(idParticipante).emit("pararTransmissao");
     }
@@ -123,6 +130,7 @@ io.on("connection", (socket) => {
 
     if (socket.id === telaoId) {
       telaoId = null;
+      console.log("Telão desconectado");
     }
 
     if (participantes.has(socket.id)) {
