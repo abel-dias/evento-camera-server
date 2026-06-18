@@ -74,6 +74,8 @@ io.on("connection", (socket) => {
 
     console.log("Participante selecionado:", participante.nome);
 
+    io.to(telaoId).emit("esconderQRCodeTelao");
+
     io.to(telaoId).emit("iniciarVideo", {
       participante: participante
     });
@@ -84,6 +86,23 @@ io.on("connection", (socket) => {
     });
 
     io.emit("participanteSelecionado", participante);
+  });
+
+  socket.on("mostrarQRCodeTelao", () => {
+    if (!telaoId) {
+      socket.emit("erroSelecao", "O telão ainda não está conectado.");
+      return;
+    }
+
+    console.log("Mostrar QR Code no telão");
+    io.to(telaoId).emit("mostrarQRCodeTelao");
+  });
+
+  socket.on("esconderQRCodeTelao", () => {
+    if (telaoId) {
+      console.log("Esconder QR Code no telão");
+      io.to(telaoId).emit("esconderQRCodeTelao");
+    }
   });
 
   socket.on("offer", (data) => {
@@ -122,6 +141,7 @@ io.on("connection", (socket) => {
 
     if (telaoId) {
       io.to(telaoId).emit("limparTelao");
+      io.to(telaoId).emit("esconderQRCodeTelao");
     }
   });
 
