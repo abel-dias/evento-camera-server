@@ -88,14 +88,22 @@ io.on("connection", (socket) => {
     io.emit("participanteSelecionado", participante);
   });
 
-  socket.on("mostrarQRCodeTelao", () => {
+  socket.on("mostrarQRCodeTelao", (dados = {}) => {
     if (!telaoId) {
       socket.emit("erroSelecao", "O telão ainda não está conectado.");
       return;
     }
 
-    console.log("Mostrar QR Code no telão");
-    io.to(telaoId).emit("mostrarQRCodeTelao");
+    const texto =
+      dados.texto && dados.texto.trim() !== ""
+        ? dados.texto.trim()
+        : "Entre para participar do sorteio!";
+
+    console.log("Mostrar QR Code no telão:", texto);
+
+    io.to(telaoId).emit("mostrarQRCodeTelao", {
+      texto: texto
+    });
   });
 
   socket.on("esconderQRCodeTelao", () => {
